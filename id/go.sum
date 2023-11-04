@@ -1,0 +1,4 @@
+github.com/go-courier/snowflakeid v1.2.1 h1:BBHzZh1mbQkIoCAPmQWN22xg6bzuBf70bu46y5ZeWP8=
+github.com/go-courier/snowflakeid v1.2.1/go.mod h1:rICqGREYxqsJBZe9DczKduB/HzZF9YIV6C29lXrgtHw=
+github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=

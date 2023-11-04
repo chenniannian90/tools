@@ -1,0 +1,158 @@
+# github.com/davecgh/go-spew v1.1.1
+## explicit
+github.com/davecgh/go-spew/spew
+# github.com/fatih/color v1.15.0
+## explicit; go 1.17
+github.com/fatih/color
+# github.com/go-courier/codegen v1.1.2
+## explicit
+github.com/go-courier/codegen
+github.com/go-courier/codegen/formatx
+# github.com/go-courier/courier v1.4.1
+## explicit; go 1.14
+github.com/go-courier/courier
+# github.com/go-courier/enumeration v1.3.1
+## explicit; go 1.16
+github.com/go-courier/enumeration/generator
+github.com/go-courier/enumeration/scanner
+# github.com/go-courier/httptransport v1.20.2
+## explicit; go 1.16
+github.com/go-courier/httptransport
+github.com/go-courier/httptransport/client/generator
+github.com/go-courier/httptransport/handlers
+github.com/go-courier/httptransport/httpx
+github.com/go-courier/httptransport/openapi/generator
+github.com/go-courier/httptransport/transformers
+# github.com/go-courier/logr v0.0.2
+## explicit; go 1.16
+github.com/go-courier/logr
+# github.com/go-courier/metax v1.3.0
+## explicit; go 1.17
+github.com/go-courier/metax
+# github.com/go-courier/oas v1.2.1
+## explicit; go 1.16
+github.com/go-courier/oas
+# github.com/go-courier/packagesx v1.0.2
+## explicit; go 1.14
+github.com/go-courier/packagesx
+# github.com/go-courier/ptr v1.0.1
+## explicit; go 1.14
+github.com/go-courier/ptr
+# github.com/go-courier/reflectx v1.3.4
+## explicit; go 1.14
+github.com/go-courier/reflectx
+github.com/go-courier/reflectx/typesutil
+# github.com/go-courier/sqlx/v2 v2.23.13
+## explicit; go 1.17
+github.com/go-courier/sqlx/v2/builder
+github.com/go-courier/sqlx/v2/generator
+# github.com/go-courier/statuserror v1.2.0
+## explicit; go 1.16
+github.com/go-courier/statuserror
+github.com/go-courier/statuserror/generator
+# github.com/go-courier/validator v1.5.4
+## explicit; go 1.14
+github.com/go-courier/validator
+github.com/go-courier/validator/errors
+github.com/go-courier/validator/rules
+github.com/go-courier/validator/strfmt
+# github.com/go-courier/x v0.0.10
+## explicit; go 1.17
+github.com/go-courier/x/context
+github.com/go-courier/x/reflect
+github.com/go-courier/x/types
+# github.com/google/uuid v1.3.0
+## explicit
+github.com/google/uuid
+# github.com/inconshreveable/mousetrap v1.1.0
+## explicit; go 1.18
+github.com/inconshreveable/mousetrap
+# github.com/julienschmidt/httprouter v1.3.0
+## explicit; go 1.7
+github.com/julienschmidt/httprouter
+# github.com/kr/pretty v0.1.0
+## explicit
+# github.com/mattn/go-colorable v0.1.13
+## explicit; go 1.15
+github.com/mattn/go-colorable
+# github.com/mattn/go-isatty v0.0.17
+## explicit; go 1.15
+github.com/mattn/go-isatty
+# github.com/onsi/gomega v1.16.0
+## explicit; go 1.16
+github.com/onsi/gomega
+github.com/onsi/gomega/format
+github.com/onsi/gomega/internal
+github.com/onsi/gomega/matchers
+github.com/onsi/gomega/matchers/support/goraph/bipartitegraph
+github.com/onsi/gomega/matchers/support/goraph/edge
+github.com/onsi/gomega/matchers/support/goraph/node
+github.com/onsi/gomega/matchers/support/goraph/util
+github.com/onsi/gomega/types
+# github.com/pkg/errors v0.9.1
+## explicit
+github.com/pkg/errors
+# github.com/spf13/cobra v1.7.0
+## explicit; go 1.15
+github.com/spf13/cobra
+# github.com/spf13/pflag v1.0.5
+## explicit; go 1.12
+github.com/spf13/pflag
+# github.com/stretchr/testify v1.8.0
+## explicit; go 1.13
+# golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
+## explicit; go 1.17
+golang.org/x/mod/internal/lazyregexp
+golang.org/x/mod/modfile
+golang.org/x/mod/module
+golang.org/x/mod/semver
+# golang.org/x/net v0.0.0-20220722155237-a158d28d115b
+## explicit; go 1.17
+golang.org/x/net/html
+golang.org/x/net/html/atom
+golang.org/x/net/html/charset
+# golang.org/x/sys v0.6.0
+## explicit; go 1.17
+golang.org/x/sys/execabs
+golang.org/x/sys/internal/unsafeheader
+golang.org/x/sys/unix
+golang.org/x/sys/windows
+# golang.org/x/text v0.4.0
+## explicit; go 1.17
+golang.org/x/text/encoding
+golang.org/x/text/encoding/charmap
+golang.org/x/text/encoding/htmlindex
+golang.org/x/text/encoding/internal
+golang.org/x/text/encoding/internal/identifier
+golang.org/x/text/encoding/japanese
+golang.org/x/text/encoding/korean
+golang.org/x/text/encoding/simplifiedchinese
+golang.org/x/text/encoding/traditionalchinese
+golang.org/x/text/encoding/unicode
+golang.org/x/text/internal/language
+golang.org/x/text/internal/language/compact
+golang.org/x/text/internal/tag
+golang.org/x/text/internal/utf8internal
+golang.org/x/text/language
+golang.org/x/text/runes
+golang.org/x/text/transform
+# golang.org/x/tools v0.1.12
+## explicit; go 1.18
+golang.org/x/tools/go/gcexportdata
+golang.org/x/tools/go/internal/gcimporter
+golang.org/x/tools/go/internal/packagesdriver
+golang.org/x/tools/go/internal/pkgbits
+golang.org/x/tools/go/packages
+golang.org/x/tools/internal/event
+golang.org/x/tools/internal/event/core
+golang.org/x/tools/internal/event/keys
+golang.org/x/tools/internal/event/label
+golang.org/x/tools/internal/gocommand
+golang.org/x/tools/internal/packagesinternal
+golang.org/x/tools/internal/typeparams
+golang.org/x/tools/internal/typesinternal
+# gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
+## explicit
+# gopkg.in/yaml.v2 v2.4.0
+## explicit; go 1.15
+gopkg.in/yaml.v2
