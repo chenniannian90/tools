@@ -77,6 +77,7 @@ func (s *Server) Serve(router *courier.Router) error {
 		defaultCompress,
 	}
 	ht.Middlewares = append(ht.Middlewares, []httptransport.HttpMiddleware{
+		middlewares.RecoverHandler(),
 		middlewares.DefaultCORS(),
 		middlewares.HealthCheckHandler(),
 		middlewares.PProfHandler(*s.Debug),
