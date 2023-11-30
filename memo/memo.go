@@ -83,3 +83,11 @@ func (m *Memo) Set(key Key, value Value, opts ...Option) {
 	}
 	m.Unlock()
 }
+
+func (m *Memo) Invalid(key Key) {
+	m.Lock()
+	if _, ok := m.cache[key]; ok {
+		delete(m.cache, key)
+	}
+	m.Unlock()
+}

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -9,7 +10,7 @@ import (
 )
 
 var monitoredSignals = []os.Signal{
-	syscall.SIGHUP,
+	//syscall.SIGHUP,
 	syscall.SIGINT,
 	syscall.SIGTERM,
 	syscall.SIGQUIT,
@@ -31,7 +32,8 @@ func Run(ctx context.Context, tasks ...Task) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
-		<-quit
+		s := <-quit
+		fmt.Printf("recevied signal %s\n", s.String())
 		cancel()
 	}()
 
