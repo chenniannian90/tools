@@ -33,7 +33,6 @@ func (rt *LogRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	startedAt := time.Now()
 
 	ctx := req.Context()
-
 	// inject b3 form context
 	(&b3.B3{InjectEncoding: b3.B3SingleHeader}).Inject(ctx, propagation.HeaderCarrier(req.Header))
 
@@ -87,10 +86,10 @@ func TraceLogHandler(tracer trace.Tracer) func(handler http.Handler) http.Handle
 
 			meta := metax.ParseMeta(loggerRw.Header().Get("X-Meta"))
 			meta["_id"] = []string{span.SpanContext().TraceID().String()}
-
+			meta["_host"] = []string{req.Host}
+			meta["_client"] = []string{req.RemoteAddr}
 			ctx = metax.ContextWithMeta(ctx, meta)
 			ctx = logr.WithLogger(ctx, log)
-
 			nextHandler.ServeHTTP(loggerRw, req.WithContext(ctx))
 
 			operator := metax.ParseMeta(loggerRw.Header().Get("X-Meta")).Get("operator")
