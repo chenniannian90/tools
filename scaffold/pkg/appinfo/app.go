@@ -122,6 +122,30 @@ func (c *AppCtx) Conf(values ...interface{}) {
 	}
 }
 
+func (c *AppCtx) ConfWithContent(contents []byte, values ...interface{}) {
+	kv := map[string]string{}
+	err := yaml.Unmarshal(contents, &kv)
+	if err == nil {
+		for k, v := range kv {
+			_ = os.Setenv(k, v)
+		}
+	}
+	for i := range values {
+		v := values[i]
+
+		rv := reflect.ValueOf(v)
+		if rv.Kind() != reflect.Ptr {
+			panic(fmt.Errorf("ConfP pass ptr for setting value"))
+		}
+
+		c.scanDefaults(rv)
+		c.mustMarshal(rv)
+		c.configValues = append(c.configValues, rv)
+
+		triggerInitials(rv)
+	}
+}
+
 func (c *AppCtx) Execute(fn func(args ...string), cmdOpts ...func(*cobra.Command)) {
 	for i := range cmdOpts {
 		cmdOpts[i](c.cmd)
