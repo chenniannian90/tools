@@ -6,10 +6,116 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"sync"
+	"time"
 
+	"github.com/go-courier/envconf"
 	"github.com/sirupsen/logrus"
 )
+
+// MCP 配置结构（用于客户端）
+type MCP struct {
+	Port int `env:",opt,expose"`
+
+	// 协议类型：stdio、http 或 sse
+	Protocol string `env:""`
+
+	// 服务器名称
+	Name string `env:""`
+
+	// 内部字段
+	Initialized bool   `env:"-"`
+	retry       *Retry `env:"-"`
+}
+
+// SetDefaults 设置默认配置值
+func (m *MCP) SetDefaults() {
+	if m.Protocol == "" {
+		m.Protocol = "stdio"
+	}
+
+	// 如果是 SSE 或 HTTP 协议，设置默认端口
+	if (m.Protocol == "sse" || m.Protocol == "http") && m.Port == 0 {
+		m.Port = 3000
+	}
+
+	// 初始化重试配置
+	if m.retry == nil {
+		m.retry = &Retry{}
+		m.retry.SetDefaults()
+	}
+}
+
+// Init 初始化 MCP
+func (m *MCP) Init() {
+	if !m.Initialized {
+		m.SetDefaults()
+		m.Initialized = true
+	}
+}
+
+// GetAddress 获取服务地址
+func (m *MCP) GetAddress() string {
+	if m.Port > 0 {
+		return ":" + strconv.Itoa(m.Port)
+	}
+	return "stdio"
+}
+
+// GetServerInfo 获取服务器信息
+func (m *MCP) GetServerInfo() ServerInfo {
+	return ServerInfo{
+		Name:     m.Name,
+		Version:  "1.0.0",
+		Protocol: m.Protocol,
+		Address:  m.GetAddress(),
+		Capabilities: Capabilities{
+			Tools: true,
+		},
+	}
+}
+
+// LivenessCheck 健康检查
+func (m *MCP) LivenessCheck() map[string]string {
+	status := map[string]string{}
+
+	if m.Initialized {
+		status[m.GetAddress()] = "ok"
+	} else {
+		status[m.GetAddress()] = "not initialized"
+	}
+
+	return status
+}
+
+// SetRetryConfig 设置重试配置
+func (m *MCP) SetRetryConfig(repeats int, interval time.Duration) {
+	if m.retry == nil {
+		m.retry = &Retry{}
+	}
+	m.retry.Repeats = repeats
+	m.retry.Interval = envconf.Duration(interval)
+}
+
+// connect 建立连接（带重试）
+func (m *MCP) connect() error {
+	if m.retry == nil {
+		m.retry = &Retry{}
+		m.retry.SetDefaults()
+	}
+
+	return m.retry.Do(func() error {
+		switch m.Protocol {
+		case "stdio":
+			return nil // stdio 不需要连接
+		case "sse":
+			return fmt.Errorf("SSE 协议暂未实现")
+		default:
+			return fmt.Errorf("不支持的协议: %s", m.Protocol)
+		}
+	})
+}
 
 // Client represents an MCP client that connects to MCP servers
 type Client struct {
@@ -105,7 +211,7 @@ func (c *Client) initialize(ctx context.Context) error {
 		Params: map[string]interface{}{
 			"protocolVersion": "2024-11-05",
 			"capabilities": map[string]interface{}{
-				"roots": map[string]interface{}{
+				"tools": map[string]interface{}{
 					"listChanged": true,
 				},
 			},
@@ -220,219 +326,6 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]inte
 	}
 
 	return resp.Result, nil
-}
-
-// ListResources lists available resources from server
-func (c *Client) ListResources(ctx context.Context) ([]*Resource, error) {
-	if !c.initialized {
-		return nil, fmt.Errorf("client not initialized")
-	}
-
-	req := &JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      c.nextRequestID(),
-		Method:  "resources/list",
-	}
-
-	resp, err := c.transport.Send(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.Error != nil {
-		return nil, fmt.Errorf("failed to list resources: %s", resp.Error.Message)
-	}
-
-	result, ok := resp.Result.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	resourcesInterface, ok := result["resources"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid resources format")
-	}
-
-	var resources []*Resource
-	for _, resInterface := range resourcesInterface {
-		resMap, ok := resInterface.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		resource := &Resource{
-			URI:         getString(resMap, "uri"),
-			Name:        getString(resMap, "name"),
-			Description: getString(resMap, "description"),
-			MimeType:    getString(resMap, "mimeType"),
-		}
-		resources = append(resources, resource)
-	}
-
-	return resources, nil
-}
-
-// ReadResource reads a resource from server
-func (c *Client) ReadResource(ctx context.Context, uri string) (*ResourceContent, error) {
-	if !c.initialized {
-		return nil, fmt.Errorf("client not initialized")
-	}
-
-	req := &JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      c.nextRequestID(),
-		Method:  "resources/read",
-		Params: map[string]interface{}{
-			"uri": uri,
-		},
-	}
-
-	resp, err := c.transport.Send(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.Error != nil {
-		return nil, fmt.Errorf("failed to read resource: %s", resp.Error.Message)
-	}
-
-	result, ok := resp.Result.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	contentsInterface, ok := result["contents"].([]interface{})
-	if !ok || len(contentsInterface) == 0 {
-		return nil, fmt.Errorf("invalid contents format")
-	}
-
-	contentMap, ok := contentsInterface[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	content := &ResourceContent{
-		URI:      getString(contentMap, "uri"),
-		MimeType: getString(contentMap, "mimeType"),
-		Text:     getString(contentMap, "text"),
-	}
-
-	return content, nil
-}
-
-// ListPrompts lists available prompts from server
-func (c *Client) ListPrompts(ctx context.Context) ([]*Prompt, error) {
-	if !c.initialized {
-		return nil, fmt.Errorf("client not initialized")
-	}
-
-	req := &JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      c.nextRequestID(),
-		Method:  "prompts/list",
-	}
-
-	resp, err := c.transport.Send(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.Error != nil {
-		return nil, fmt.Errorf("failed to list prompts: %s", resp.Error.Message)
-	}
-
-	result, ok := resp.Result.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	promptsInterface, ok := result["prompts"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid prompts format")
-	}
-
-	var prompts []*Prompt
-	for _, promptInterface := range promptsInterface {
-		promptMap, ok := promptInterface.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		prompt := &Prompt{
-			Name:        getString(promptMap, "name"),
-			Description: getString(promptMap, "description"),
-		}
-
-		if argsInterface, ok := promptMap["arguments"].([]interface{}); ok {
-			for _, argInterface := range argsInterface {
-				argMap, ok := argInterface.(map[string]interface{})
-				if !ok {
-					continue
-				}
-
-				arg := PromptArgument{
-					Name:        getString(argMap, "name"),
-					Description: getString(argMap, "description"),
-				}
-				if required, ok := argMap["required"].(bool); ok {
-					arg.Required = required
-				}
-				prompt.Arguments = append(prompt.Arguments, arg)
-			}
-		}
-
-		prompts = append(prompts, prompt)
-	}
-
-	return prompts, nil
-}
-
-// GetPrompt gets a prompt from server
-func (c *Client) GetPrompt(ctx context.Context, name string, args map[string]interface{}) (string, error) {
-	if !c.initialized {
-		return "", fmt.Errorf("client not initialized")
-	}
-
-	params := map[string]interface{}{
-		"name": name,
-	}
-	if args != nil {
-		params["arguments"] = args
-	}
-
-	req := &JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      c.nextRequestID(),
-		Method:  "prompts/get",
-		Params:  params,
-	}
-
-	resp, err := c.transport.Send(ctx, req)
-	if err != nil {
-		return "", err
-	}
-
-	if resp.Error != nil {
-		return "", fmt.Errorf("failed to get prompt: %s", resp.Error.Message)
-	}
-
-	result, ok := resp.Result.(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid response format")
-	}
-
-	messagesInterface, ok := result["messages"].([]interface{})
-	if !ok || len(messagesInterface) == 0 {
-		return "", fmt.Errorf("invalid messages format")
-	}
-
-	messageMap, ok := messagesInterface[0].(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid message format")
-	}
-
-	content := getString(messageMap, "content")
-	return content, nil
 }
 
 // Helper functions

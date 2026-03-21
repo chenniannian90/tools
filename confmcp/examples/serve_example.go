@@ -12,18 +12,12 @@ import (
 // 展示如何一行代码启动 HTTP MCP 服务器
 
 func main() {
-	// 创建配置
-	config := &confmcp.MCP{
-		Name:     "serve-example",
-		Protocol: "http",
-		Port:     3002,
-	}
-
-	// 创建服务器
-	server := confmcp.NewServer(config)
+	server := confmcp.NewServer()
+	server.Name = "serve-example"
+	server.Protocol = "http"
+	server.Port = 3002
 
 	// 使用 Serve 方法一键启动 HTTP 服务器
-	// 只需要传入工具数组，自动处理所有 HTTP 端点
 	err := server.Serve([]*confmcp.Tool{
 		{
 			Name:        "ping",
@@ -35,7 +29,7 @@ func main() {
 				return map[string]interface{}{
 					"status":  "ok",
 					"time":    time.Now().Format(time.RFC3339),
-					"server":  config.Name,
+					"server":  "serve-example",
 					"message": "Server is running healthy!",
 				}, nil
 			},
@@ -71,7 +65,7 @@ func main() {
 				},
 			},
 			Handler: func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
-			 timezone := "UTC"
+				timezone := "UTC"
 				if tz, ok := args["timezone"].(string); ok {
 					timezone = tz
 				}

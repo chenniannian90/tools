@@ -13,12 +13,9 @@ import (
 // 展示如何实现带有参数验证和错误处理的工具
 
 func main() {
-	config := &confmcp.MCP{
-		Name:          "calculator-server",
-		Protocol:      "stdio",
-	}
-
-	server := confmcp.NewServer(config)
+	server := confmcp.NewServer()
+	server.Name = "calculator-server"
+	server.Protocol = "stdio"
 
 	// 加法工具
 	server.RegisterTool(&confmcp.Tool{

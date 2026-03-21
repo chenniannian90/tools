@@ -107,31 +107,11 @@ func TestMCPSetRetryConfig(t *testing.T) {
 
 func TestCapabilities(t *testing.T) {
 	cap := Capabilities{
-		Tools:     true,
-		Resources: true,
-		Prompts:   true,
-		Roots:     false,
-		Sampling:  false,
+		Tools: true,
 	}
 
 	if !cap.Tools {
 		t.Error("期望工具已启用")
-	}
-
-	if !cap.Resources {
-		t.Error("期望资源已启用")
-	}
-
-	if !cap.Prompts {
-		t.Error("期望提示已启用")
-	}
-
-	if cap.Roots {
-		t.Error("期望 roots 未启用")
-	}
-
-	if cap.Sampling {
-		t.Error("期望 sampling 未启用")
 	}
 }
 
@@ -163,12 +143,6 @@ func TestMCPGetServerInfo(t *testing.T) {
 	// 检查默认能力
 	if !info.Capabilities.Tools {
 		t.Error("期望默认启用工具能力")
-	}
-	if !info.Capabilities.Resources {
-		t.Error("期望默认启用资源能力")
-	}
-	if !info.Capabilities.Prompts {
-		t.Error("期望默认启用提示能力")
 	}
 }
 

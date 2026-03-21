@@ -1,0 +1,24 @@
+# 编译后的二进制文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go 编译产物
+serve_example
+http_server
+http_client_server
+http_client_example
+sse_server
+sse_client
+calculator_server
+echo_server
+
+# 临时文件
+*.tmp
+*.swp
+*~
+.DS_Store

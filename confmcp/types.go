@@ -15,3 +15,17 @@ type JSONRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
+
+// Capabilities 定义 MCP 服务器能力（仅支持 tools）
+type Capabilities struct {
+	Tools bool `json:"tools"`
+}
+
+// ServerInfo 服务器信息
+type ServerInfo struct {
+	Name         string       `json:"name"`
+	Version      string       `json:"version"`
+	Protocol     string       `json:"protocol"`
+	Address      string       `json:"address"`
+	Capabilities Capabilities `json:"capabilities"`
+}

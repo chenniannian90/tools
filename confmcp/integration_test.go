@@ -8,12 +8,9 @@ import (
 
 // TestServerInitialization 测试服务器初始化流程
 func TestServerInitialization(t *testing.T) {
-	config := &MCP{
-		Name:     "test-server",
-		Protocol: "stdio",
-	}
-
-	server := NewServer(config)
+	server := NewServer()
+	server.Name = "test-server"
+	server.Protocol = "stdio"
 
 	if server == nil {
 		t.Fatal("服务器创建失败")
@@ -40,10 +37,9 @@ func TestServerInitialization(t *testing.T) {
 
 // TestServerWithMultipleTools 测试服务器处理多个工具
 func TestServerWithMultipleTools(t *testing.T) {
-	server := NewServer(&MCP{
-		Name:     "multi-tool-server",
-		Protocol: "stdio",
-	})
+	server := NewServer()
+	server.Name = "multi-tool-server"
+	server.Protocol = "stdio"
 
 	// 注册多个工具
 	tools := []*Tool{
@@ -92,74 +88,11 @@ func TestServerWithMultipleTools(t *testing.T) {
 	}
 }
 
-// TestServerWithResourcesAndPrompts 测试服务器的资源和提示功能
-func TestServerWithResourcesAndPrompts(t *testing.T) {
-	server := NewServer(&MCP{
-		Name:     "full-server",
-		Protocol: "stdio",
-	})
-
-	// 注册资源
-	err := server.RegisterResource(&Resource{
-		URI:  "test://resource1",
-		Name: "测试资源1",
-		Handler: func(ctx context.Context, uri string) (*ResourceContent, error) {
-			return &ResourceContent{
-				URI:  uri,
-				Text: "资源内容",
-			}, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("资源注册失败: %v", err)
-	}
-
-	// 注册提示
-	err = server.RegisterPrompt(&Prompt{
-		Name:        "test-prompt",
-		Description: "测试提示",
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
-			return "提示内容", nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("提示注册失败: %v", err)
-	}
-
-	// 验证注册成功
-	if server.GetResources().Count() != 1 {
-		t.Error("资源未成功注册")
-	}
-	if server.GetPrompts().Count() != 1 {
-		t.Error("提示未成功注册")
-	}
-
-	// 测试读取资源
-	ctx := context.Background()
-	content, err := server.GetResources().Read(ctx, "test://resource1")
-	if err != nil {
-		t.Fatalf("读取资源失败: %v", err)
-	}
-	if content.Text != "资源内容" {
-		t.Errorf("期望内容 '资源内容'，得到 '%s'", content.Text)
-	}
-
-	// 测试获取提示
-	prompt, err := server.GetPrompts().Generate(ctx, "test-prompt", nil)
-	if err != nil {
-		t.Fatalf("获取提示失败: %v", err)
-	}
-	if prompt != "提示内容" {
-		t.Errorf("期望提示 '提示内容'，得到 '%s'", prompt)
-	}
-}
-
 // TestConcurrentToolExecution 测试并发工具执行
 func TestConcurrentToolExecution(t *testing.T) {
-	server := NewServer(&MCP{
-		Name:     "concurrent-server",
-		Protocol: "stdio",
-	})
+	server := NewServer()
+	server.Name = "concurrent-server"
+	server.Protocol = "stdio"
 
 	// 注册一个耗时工具
 	server.RegisterTool(&Tool{
@@ -209,12 +142,9 @@ func TestConcurrentToolExecution(t *testing.T) {
 
 // TestServerLifecycle 测试服务器生命周期
 func TestServerLifecycle(t *testing.T) {
-	config := &MCP{
-		Name:     "lifecycle-server",
-		Protocol: "stdio",
-	}
-
-	server := NewServer(config)
+	server := NewServer()
+	server.Name = "lifecycle-server"
+	server.Protocol = "stdio"
 
 	// 测试初始状态
 	if server.GetTools().Count() != 0 {
@@ -243,10 +173,9 @@ func TestServerLifecycle(t *testing.T) {
 
 // TestErrorHandling 测试错误处理
 func TestErrorHandling(t *testing.T) {
-	server := NewServer(&MCP{
-		Name:     "error-server",
-		Protocol: "stdio",
-	})
+	server := NewServer()
+	server.Name = "error-server"
+	server.Protocol = "stdio"
 
 	// 注册一个会返回错误的工具
 	server.RegisterTool(&Tool{
@@ -294,14 +223,18 @@ func TestServerInfo(t *testing.T) {
 	if info.Protocol != "stdio" {
 		t.Errorf("期望协议 stdio，得到 %s", info.Protocol)
 	}
+
+	// 验证 capabilities 只有 tools
+	if !info.Capabilities.Tools {
+		t.Error("期望 Tools capability 为 true")
+	}
 }
 
 // BenchmarkToolExecution 基准测试工具执行
 func BenchmarkToolExecution(b *testing.B) {
-	server := NewServer(&MCP{
-		Name:     "benchmark-server",
-		Protocol: "stdio",
-	})
+	server := NewServer()
+	server.Name = "benchmark-server"
+	server.Protocol = "stdio"
 
 	server.RegisterTool(&Tool{
 		Name: "bench_tool",
@@ -320,10 +253,9 @@ func BenchmarkToolExecution(b *testing.B) {
 
 // BenchmarkConcurrentToolExecution 基准测试并发工具执行
 func BenchmarkConcurrentToolExecution(b *testing.B) {
-	server := NewServer(&MCP{
-		Name:     "concurrent-bench-server",
-		Protocol: "stdio",
-	})
+	server := NewServer()
+	server.Name = "concurrent-bench-server"
+	server.Protocol = "stdio"
 
 	server.RegisterTool(&Tool{
 		Name: "fast_tool",
@@ -341,3 +273,4 @@ func BenchmarkConcurrentToolExecution(b *testing.B) {
 		}
 	})
 }
+

@@ -9,13 +9,10 @@ import (
 
 // TestServeMethod 测试 Serve 方法的基本功能
 func TestServeMethod(t *testing.T) {
-	config := &MCP{
-		Name:     "test-serve",
-		Protocol: "http",
-		Port:     3999, // 使用非标准端口避免冲突
-	}
-
-	server := NewServer(config)
+	server := NewServer()
+	server.Name = "test-serve"
+	server.Protocol = "http"
+	server.Port = 3999 // 使用非标准端口避免冲突
 
 	// 在后台启动服务器
 	go func() {
@@ -53,13 +50,10 @@ func TestServeMethod(t *testing.T) {
 
 // TestServeWithMultipleTools 测试使用 Serve 注册多个工具
 func TestServeWithMultipleTools(t *testing.T) {
-	config := &MCP{
-		Name:     "test-multi-tools",
-		Protocol: "http",
-		Port:     3998,
-	}
-
-	server := NewServer(config)
+	server := NewServer()
+	server.Name = "test-multi-tools"
+	server.Protocol = "http"
+	server.Port = 3998
 
 	tools := []*Tool{
 		{

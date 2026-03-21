@@ -7,46 +7,122 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/go-courier/envconf"
 	"github.com/sirupsen/logrus"
 )
 
-// Server represents an MCP server instance
+// Server represents an MCP server instance (tools only)
 type Server struct {
-	config    *MCP
-	tools     *ToolRegistry
-	resources *ResourceRegistry
-	prompts   *PromptRegistry
-	running   bool
+	// 公开配置字段（类似 http.Server）
+	Name     string // 服务器名称
+	Protocol string // 协议类型: "stdio", "http", "sse"
+	Port     int    // 端口（HTTP/SSE 时使用）
+
+	// 内部字段
+	tools   *ToolRegistry
+	running bool
+	retry   *Retry
+	Initialized bool
 }
 
-// NewServer creates a new MCP server
-func NewServer(config *MCP) *Server {
-	if config == nil {
-		config = &MCP{}
+// NewServer creates a new MCP server with default configuration
+func NewServer() *Server {
+	return &Server{
+		Protocol: "stdio", // 默认协议
+		tools:    NewToolRegistry(),
+	}
+}
+
+// SetDefaults 设置默认配置值
+func (s *Server) SetDefaults() {
+	if s.Protocol == "" {
+		s.Protocol = "stdio"
 	}
 
-	return &Server{
-		config:    config,
-		tools:     NewToolRegistry(),
-		resources: NewResourceRegistry(),
-		prompts:   NewPromptRegistry(),
+	// 如果是 SSE 或 HTTP 协议，设置默认端口
+	if (s.Protocol == "sse" || s.Protocol == "http") && s.Port == 0 {
+		s.Port = 3000
+	}
+
+	// 初始化重试配置
+	if s.retry == nil {
+		s.retry = &Retry{}
+		s.retry.SetDefaults()
+	}
+}
+
+// Init 初始化 Server
+func (s *Server) Init() {
+	if !s.Initialized {
+		s.SetDefaults()
+		s.Initialized = true
+	}
+}
+
+// GetAddress 获取服务地址
+func (s *Server) GetAddress() string {
+	if s.Port > 0 {
+		return fmt.Sprintf(":%d", s.Port)
+	}
+	return "stdio"
+}
+
+// GetServerInfo 获取服务器信息
+func (s *Server) GetServerInfo() ServerInfo {
+	s.Init()
+
+	return ServerInfo{
+		Name:     s.Name,
+		Version:  "1.0.0",
+		Protocol: s.Protocol,
+		Address:  s.GetAddress(),
+		Capabilities: Capabilities{
+			Tools: true,
+		},
+	}
+}
+
+// LivenessCheck 健康检查
+func (s *Server) LivenessCheck() map[string]string {
+	s.Init()
+
+	status := make(map[string]string)
+	addr := s.GetAddress()
+
+	if addr == "stdio" {
+		status["stdio"] = "ok"
+	} else {
+		status[addr] = "ok"
+	}
+
+	return status
+}
+
+// SetRetryConfig 设置重试配置
+func (s *Server) SetRetryConfig(repeats int, interval time.Duration) {
+	s.retry = &Retry{
+		Repeats:  repeats,
+		Interval: envconf.Duration(interval),
 	}
 }
 
 // Start starts the MCP server
 func (s *Server) Start(ctx context.Context) error {
-	s.config.Init()
+	s.Init()
 
-	logrus.Infof("Starting MCP server: %s", s.config.Name)
+	logrus.Infof("Starting MCP server: %s", s.Name)
 
-	switch s.config.Protocol {
+	switch s.Protocol {
 	case "stdio":
 		return s.startStdio(ctx)
+	case "http":
+		return s.startHTTP(ctx)
 	case "sse":
-		return fmt.Errorf("SSE protocol not yet implemented")
+		return s.startSSE(ctx)
 	default:
-		return fmt.Errorf("unsupported protocol: %s", s.config.Protocol)
+		return fmt.Errorf("unsupported protocol: %s", s.Protocol)
 	}
 }
 
@@ -64,7 +140,62 @@ func (s *Server) Serve(tools []*Tool) error {
 	mux := http.NewServeMux()
 
 	// MCP 端点
-	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/mcp", s.mcpHandler())
+
+	// 健康检查端点
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := s.LivenessCheck()
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "healthy",
+			"server":  s.Name,
+			"checks":  status,
+		})
+	})
+
+	// 工具列表端点
+	mux.HandleFunc("/tools", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		tools := s.GetTools().List()
+
+		toolList := make([]map[string]interface{}, 0, len(tools))
+		for _, tool := range tools {
+			toolList = append(toolList, map[string]interface{}{
+				"name":        tool.Name,
+				"description": tool.Description,
+				"inputSchema": tool.InputSchema,
+			})
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tools": toolList,
+		})
+	})
+
+	// 确定监听地址
+	addr := s.GetAddress()
+	if addr == "stdio" {
+		addr = ":3000" // 默认 HTTP 端口
+	}
+
+	// 打印启动信息
+	logrus.Infof("Starting HTTP MCP server on %s", addr)
+	logrus.Infof("MCP endpoint: http://%s/mcp", addr)
+	logrus.Infof("Health check: http://%s/health", addr)
+	logrus.Infof("Tools list: http://%s/tools", addr)
+	logrus.Infof("Registered %d tools", len(tools))
+
+	// 启动 HTTP 服务器
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		return fmt.Errorf("HTTP server error: %w", err)
+	}
+
+	return nil
+}
+
+// mcpHandler creates the MCP HTTP handler
+func (s *Server) mcpHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -89,16 +220,36 @@ func (s *Server) Serve(tools []*Tool) error {
 
 		response := s.HandleRequest(r.Context(), request)
 		json.NewEncoder(w).Encode(response)
-	})
+	}
+}
+
+// sendJSONRPCError sends a JSON-RPC error response
+func (s *Server) sendJSONRPCError(w http.ResponseWriter, code int, message string, id interface{}) {
+	response := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+		},
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+// startHTTP starts HTTP-based server
+func (s *Server) startHTTP(ctx context.Context) error {
+	mux := http.NewServeMux()
+
+	// MCP 端点
+	mux.HandleFunc("/mcp", s.mcpHandler())
 
 	// 健康检查端点
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		status := s.config.LivenessCheck()
+		status := s.LivenessCheck()
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "healthy",
-			"server":  s.config.Name,
-			"time":    r.Context().Value("time"),
+			"server":  s.Name,
 			"checks":  status,
 		})
 	})
@@ -122,49 +273,10 @@ func (s *Server) Serve(tools []*Tool) error {
 		})
 	})
 
-	// 资源列表端点
-	mux.HandleFunc("/resources", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		resources := s.GetResources().List()
-
-		resourceList := make([]map[string]interface{}, 0, len(resources))
-		for _, resource := range resources {
-			resourceList = append(resourceList, map[string]interface{}{
-				"uri":         resource.URI,
-				"name":        resource.Name,
-				"description": resource.Description,
-				"mimeType":    resource.MimeType,
-			})
-		}
-
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"resources": resourceList,
-		})
-	})
-
-	// 提示列表端点
-	mux.HandleFunc("/prompts", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		prompts := s.GetPrompts().List()
-
-		promptList := make([]map[string]interface{}, 0, len(prompts))
-		for _, prompt := range prompts {
-			promptList = append(promptList, map[string]interface{}{
-				"name":        prompt.Name,
-				"description": prompt.Description,
-				"arguments":   prompt.Arguments,
-			})
-		}
-
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"prompts": promptList,
-		})
-	})
-
 	// 确定监听地址
-	addr := s.config.GetAddress()
+	addr := s.GetAddress()
 	if addr == "stdio" {
-		addr = ":3000" // 默认 HTTP 端口
+		addr = ":3000"
 	}
 
 	// 打印启动信息
@@ -172,9 +284,9 @@ func (s *Server) Serve(tools []*Tool) error {
 	logrus.Infof("MCP endpoint: http://%s/mcp", addr)
 	logrus.Infof("Health check: http://%s/health", addr)
 	logrus.Infof("Tools list: http://%s/tools", addr)
-	logrus.Infof("Resources list: http://%s/resources", addr)
-	logrus.Infof("Prompts list: http://%s/prompts", addr)
-	logrus.Infof("Registered %d tools", len(tools))
+	logrus.Infof("Registered %d tools", s.GetTools().Count())
+
+	s.running = true
 
 	// 启动 HTTP 服务器
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -184,17 +296,9 @@ func (s *Server) Serve(tools []*Tool) error {
 	return nil
 }
 
-// sendJSONRPCError sends a JSON-RPC error response
-func (s *Server) sendJSONRPCError(w http.ResponseWriter, code int, message string, id interface{}) {
-	response := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      id,
-		"error": map[string]interface{}{
-			"code":    code,
-			"message": message,
-		},
-	}
-	json.NewEncoder(w).Encode(response)
+// startSSE starts SSE-based server
+func (s *Server) startSSE(ctx context.Context) error {
+	return fmt.Errorf("SSE protocol not yet implemented")
 }
 
 // startStdio starts stdio-based server
@@ -248,14 +352,6 @@ func (s *Server) HandleRequest(ctx context.Context, request JSONRPCMessage) *JSO
 		return s.handleToolsList(request)
 	case "tools/call":
 		return s.handleToolsCall(ctx, request)
-	case "resources/list":
-		return s.handleResourcesList(request)
-	case "resources/read":
-		return s.handleResourcesRead(ctx, request)
-	case "prompts/list":
-		return s.handlePromptsList(request)
-	case "prompts/get":
-		return s.handlePromptsGet(ctx, request)
 	default:
 		return &JSONRPCMessage{
 			JSONRPC: "2.0",
@@ -278,18 +374,11 @@ func (s *Server) handleInitialize(request JSONRPCMessage) *JSONRPCMessage {
 		Result: map[string]interface{}{
 			"protocolVersion": "2024-11-05",
 			"serverInfo": map[string]interface{}{
-				"name":    s.config.Name,
+				"name":    s.Name,
 				"version": "1.0.0",
 			},
 			"capabilities": map[string]interface{}{
 				"tools": map[string]interface{}{
-					"listChanged": true,
-				},
-				"resources": map[string]interface{}{
-					"subscribe":   true,
-					"listChanged": true,
-				},
-				"prompts": map[string]interface{}{
 					"listChanged": true,
 				},
 			},
@@ -383,171 +472,14 @@ func (s *Server) handleToolsCall(ctx context.Context, request JSONRPCMessage) *J
 	}
 }
 
-// handleResourcesList handles resources/list request
-func (s *Server) handleResourcesList(request JSONRPCMessage) *JSONRPCMessage {
-	resources := s.resources.List()
-
-	// Convert to serializable format
-	resourcesList := make([]map[string]interface{}, 0, len(resources))
-	for _, resource := range resources {
-		resourceMap := map[string]interface{}{
-			"uri":         resource.URI,
-			"name":        resource.Name,
-			"description": resource.Description,
-		}
-		if resource.MimeType != "" {
-			resourceMap["mimeType"] = resource.MimeType
-		}
-		resourcesList = append(resourcesList, resourceMap)
-	}
-
-	return &JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      request.ID,
-		Result: map[string]interface{}{
-			"resources": resourcesList,
-		},
-	}
-}
-
-// handleResourcesRead handles resources/read request
-func (s *Server) handleResourcesRead(ctx context.Context, request JSONRPCMessage) *JSONRPCMessage {
-	params, ok := request.Params.(map[string]interface{})
-	if !ok {
-		return errorResponse(request.ID, -32602, "Invalid params")
-	}
-
-	uri, _ := params["uri"].(string)
-	logrus.Infof("Reading resource: %s", uri)
-
-	content, err := s.resources.Read(ctx, uri)
-	if err != nil {
-		logrus.Errorf("Resource read failed: %v", err)
-		return errorResponse(request.ID, -32000, err.Error())
-	}
-
-	// Convert to serializable format
-	contentMap := map[string]interface{}{
-		"uri": content.URI,
-	}
-
-	if content.Text != "" {
-		contentMap["text"] = content.Text
-	}
-
-	if content.MimeType != "" {
-		contentMap["mimeType"] = content.MimeType
-	}
-
-	return &JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      request.ID,
-		Result: map[string]interface{}{
-			"contents": []interface{}{contentMap},
-		},
-	}
-}
-
-// handlePromptsList handles prompts/list request
-func (s *Server) handlePromptsList(request JSONRPCMessage) *JSONRPCMessage {
-	prompts := s.prompts.List()
-
-	// Convert to serializable format
-	promptsList := make([]map[string]interface{}, 0, len(prompts))
-	for _, prompt := range prompts {
-		promptMap := map[string]interface{}{
-			"name":        prompt.Name,
-			"description": prompt.Description,
-		}
-
-		if len(prompt.Arguments) > 0 {
-			args := make([]map[string]interface{}, 0, len(prompt.Arguments))
-			for _, arg := range prompt.Arguments {
-				argMap := map[string]interface{}{
-					"name":        arg.Name,
-					"description": arg.Description,
-					"required":    arg.Required,
-				}
-				args = append(args, argMap)
-			}
-			promptMap["arguments"] = args
-		}
-
-		promptsList = append(promptsList, promptMap)
-	}
-
-	return &JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      request.ID,
-		Result: map[string]interface{}{
-			"prompts": promptsList,
-		},
-	}
-}
-
-// handlePromptsGet handles prompts/get request
-func (s *Server) handlePromptsGet(ctx context.Context, request JSONRPCMessage) *JSONRPCMessage {
-	params, ok := request.Params.(map[string]interface{})
-	if !ok {
-		return errorResponse(request.ID, -32602, "Invalid params")
-	}
-
-	name, _ := params["name"].(string)
-	var args map[string]interface{}
-	if argsInterface, ok := params["arguments"]; ok {
-		args, _ = argsInterface.(map[string]interface{})
-	}
-
-	logrus.Infof("Getting prompt: %s with args: %+v", name, args)
-
-	result, err := s.prompts.Generate(ctx, name, args)
-	if err != nil {
-		logrus.Errorf("Prompt get failed: %v", err)
-		return errorResponse(request.ID, -32000, err.Error())
-	}
-
-	return &JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      request.ID,
-		Result: map[string]interface{}{
-			"messages": []map[string]interface{}{
-				{
-					"role":    "user",
-					"content": result,
-				},
-			},
-		},
-	}
-}
-
 // RegisterTool registers a tool with the server
 func (s *Server) RegisterTool(tool *Tool) error {
 	return s.tools.Register(tool)
 }
 
-// RegisterResource registers a resource with the server
-func (s *Server) RegisterResource(resource *Resource) error {
-	return s.resources.Register(resource)
-}
-
-// RegisterPrompt registers a prompt with the server
-func (s *Server) RegisterPrompt(prompt *Prompt) error {
-	return s.prompts.Register(prompt)
-}
-
 // GetTools returns the tool registry
 func (s *Server) GetTools() *ToolRegistry {
 	return s.tools
-}
-
-// GetResources returns the resource registry
-func (s *Server) GetResources() *ResourceRegistry {
-	return s.resources
-}
-
-// GetPrompts returns the prompt registry
-func (s *Server) GetPrompts() *PromptRegistry {
-	return s.prompts
 }
 
 // errorResponse creates an error response

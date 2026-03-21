@@ -12,14 +12,9 @@ import (
 // 这个示例展示如何创建一个基本的 MCP 服务器，提供一个简单的 echo 工具
 
 func main() {
-	// 创建 MCP 配置
-	config := &confmcp.MCP{
-		Name:          "echo-server",
-		Protocol:      "stdio",
-	}
-
-	// 创建服务器
-	server := confmcp.NewServer(config)
+	server := confmcp.NewServer()
+	server.Name = "echo-server"
+	server.Protocol = "stdio"
 
 	// 注册 echo 工具
 	err := server.RegisterTool(&confmcp.Tool{
