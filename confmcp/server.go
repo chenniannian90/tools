@@ -298,7 +298,94 @@ func (s *Server) startHTTP(ctx context.Context) error {
 
 // startSSE starts SSE-based server
 func (s *Server) startSSE(ctx context.Context) error {
-	return fmt.Errorf("SSE protocol not yet implemented")
+	mux := http.NewServeMux()
+
+	// SSE 端点 - 用于服务器推送事件
+	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+		// 设置 SSE headers
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		// 发送连接成功消息
+		fmt.Fprintf(w, "event: connected\ndata: {\"status\":\"connected\"}\n\n")
+		w.(http.Flusher).Flush()
+
+		// 保持连接活跃
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-r.Context().Done():
+				logrus.Info("SSE client disconnected")
+				return
+			case <-ticker.C:
+				// 发送心跳保持连接
+				fmt.Fprintf(w, ": heartbeat\n\n")
+				w.(http.Flusher).Flush()
+			case <-ctx.Done():
+				return
+			}
+		}
+	})
+
+	// MCP 端点 - 用于接收 JSON-RPC 请求
+	mux.HandleFunc("/mcp", s.mcpHandler())
+
+	// 健康检查端点
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := s.LivenessCheck()
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "healthy",
+			"server":  s.Name,
+			"checks":  status,
+		})
+	})
+
+	// 工具列表端点
+	mux.HandleFunc("/tools", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		tools := s.GetTools().List()
+
+		toolList := make([]map[string]interface{}, 0, len(tools))
+		for _, tool := range tools {
+			toolList = append(toolList, map[string]interface{}{
+				"name":        tool.Name,
+				"description": tool.Description,
+				"inputSchema": tool.InputSchema,
+			})
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tools": toolList,
+		})
+	})
+
+	// 确定监听地址
+	addr := s.GetAddress()
+	if addr == "stdio" {
+		addr = ":3000"
+	}
+
+	// 打印启动信息
+	logrus.Infof("Starting SSE MCP server on %s", addr)
+	logrus.Infof("SSE endpoint: http://%s/sse", addr)
+	logrus.Infof("MCP endpoint: http://%s/mcp", addr)
+	logrus.Infof("Health check: http://%s/health", addr)
+	logrus.Infof("Tools list: http://%s/tools", addr)
+	logrus.Infof("Registered %d tools", s.GetTools().Count())
+
+	s.running = true
+
+	// 启动 HTTP 服务器
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		return fmt.Errorf("SSE server error: %w", err)
+	}
+
+	return nil
 }
 
 // startStdio starts stdio-based server
