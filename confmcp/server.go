@@ -68,7 +68,7 @@ func (s *Server) startStdio(ctx context.Context) error {
 			continue
 		}
 
-		response := s.handleRequest(ctx, request)
+		response := s.HandleRequest(ctx, request)
 		if response != nil {
 			if err := encoder.Encode(response); err != nil {
 				logrus.Errorf("Failed to encode response: %v", err)
@@ -85,8 +85,8 @@ func (s *Server) Stop() {
 	logrus.Info("MCP server stopped")
 }
 
-// handleRequest handles incoming JSON-RPC requests
-func (s *Server) handleRequest(ctx context.Context, request JSONRPCMessage) *JSONRPCMessage {
+// HandleRequest handles incoming JSON-RPC requests
+func (s *Server) HandleRequest(ctx context.Context, request JSONRPCMessage) *JSONRPCMessage {
 	logrus.Debugf("Received request: %s", request.Method)
 
 	switch request.Method {
