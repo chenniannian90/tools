@@ -184,6 +184,17 @@ func TestMCPPortConfiguration(t *testing.T) {
 		}
 	})
 
+	t.Run("HTTP 协议自动设置端口", func(t *testing.T) {
+		m := &MCP{
+			Protocol: "http",
+		}
+		m.SetDefaults()
+
+		if m.Port != 3000 {
+			t.Errorf("期望 HTTP 协议默认端口为 3000，得到 %d", m.Port)
+		}
+	})
+
 	t.Run("stdio 协议不设置端口", func(t *testing.T) {
 		m := &MCP{
 			Protocol: "stdio",

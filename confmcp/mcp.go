@@ -21,7 +21,7 @@ type MCP struct {
 
 	// 内部字段
 	Initialized bool   `env:"-"`
-	retry        *Retry `env:"-"`
+	retry       *Retry `env:"-"`
 }
 
 // Capabilities 定义 MCP 服务器能力
@@ -39,8 +39,8 @@ func (m *MCP) SetDefaults() {
 		m.Protocol = "stdio"
 	}
 
-	// 如果是 SSE 协议，设置默认端口
-	if m.Protocol == "sse" && m.Port == 0 {
+	// 如果是 SSE 或 HTTP 协议，设置默认端口
+	if (m.Protocol == "sse" || m.Protocol == "http") && m.Port == 0 {
 		m.Port = 3000
 	}
 
