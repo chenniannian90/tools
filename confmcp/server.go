@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -47,6 +48,153 @@ func (s *Server) Start(ctx context.Context) error {
 	default:
 		return fmt.Errorf("unsupported protocol: %s", s.config.Protocol)
 	}
+}
+
+// Serve starts an HTTP server with the provided tools
+// This is a convenience method for quickly setting up an HTTP MCP server
+func (s *Server) Serve(tools []*Tool) error {
+	// 自动注册所有工具
+	for _, tool := range tools {
+		if err := s.RegisterTool(tool); err != nil {
+			return fmt.Errorf("failed to register tool %s: %w", tool.Name, err)
+		}
+	}
+
+	// 创建 HTTP 服务器
+	mux := http.NewServeMux()
+
+	// MCP 端点
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var request JSONRPCMessage
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			logrus.Errorf("Failed to decode request: %v", err)
+			s.sendJSONRPCError(w, -32700, "Parse error", nil)
+			return
+		}
+
+		response := s.HandleRequest(r.Context(), request)
+		json.NewEncoder(w).Encode(response)
+	})
+
+	// 健康检查端点
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := s.config.LivenessCheck()
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "healthy",
+			"server":  s.config.Name,
+			"time":    r.Context().Value("time"),
+			"checks":  status,
+		})
+	})
+
+	// 工具列表端点
+	mux.HandleFunc("/tools", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		tools := s.GetTools().List()
+
+		toolList := make([]map[string]interface{}, 0, len(tools))
+		for _, tool := range tools {
+			toolList = append(toolList, map[string]interface{}{
+				"name":        tool.Name,
+				"description": tool.Description,
+				"inputSchema": tool.InputSchema,
+			})
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tools": toolList,
+		})
+	})
+
+	// 资源列表端点
+	mux.HandleFunc("/resources", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resources := s.GetResources().List()
+
+		resourceList := make([]map[string]interface{}, 0, len(resources))
+		for _, resource := range resources {
+			resourceList = append(resourceList, map[string]interface{}{
+				"uri":         resource.URI,
+				"name":        resource.Name,
+				"description": resource.Description,
+				"mimeType":    resource.MimeType,
+			})
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"resources": resourceList,
+		})
+	})
+
+	// 提示列表端点
+	mux.HandleFunc("/prompts", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		prompts := s.GetPrompts().List()
+
+		promptList := make([]map[string]interface{}, 0, len(prompts))
+		for _, prompt := range prompts {
+			promptList = append(promptList, map[string]interface{}{
+				"name":        prompt.Name,
+				"description": prompt.Description,
+				"arguments":   prompt.Arguments,
+			})
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"prompts": promptList,
+		})
+	})
+
+	// 确定监听地址
+	addr := s.config.GetAddress()
+	if addr == "stdio" {
+		addr = ":3000" // 默认 HTTP 端口
+	}
+
+	// 打印启动信息
+	logrus.Infof("Starting HTTP MCP server on %s", addr)
+	logrus.Infof("MCP endpoint: http://%s/mcp", addr)
+	logrus.Infof("Health check: http://%s/health", addr)
+	logrus.Infof("Tools list: http://%s/tools", addr)
+	logrus.Infof("Resources list: http://%s/resources", addr)
+	logrus.Infof("Prompts list: http://%s/prompts", addr)
+	logrus.Infof("Registered %d tools", len(tools))
+
+	// 启动 HTTP 服务器
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		return fmt.Errorf("HTTP server error: %w", err)
+	}
+
+	return nil
+}
+
+// sendJSONRPCError sends a JSON-RPC error response
+func (s *Server) sendJSONRPCError(w http.ResponseWriter, code int, message string, id interface{}) {
+	response := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+		},
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 // startStdio starts stdio-based server

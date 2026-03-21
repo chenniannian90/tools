@@ -89,6 +89,85 @@ result, _ := client.CallTool(context.Background(), "echo", map[string]interface{
 })
 ```
 
+### 使用 Serve 方法（推荐）
+
+最简单的方式启动 HTTP MCP 服务器：
+
+```go
+config := &confmcp.MCP{
+    Name:     "my-server",
+    Protocol: "http",
+    Port:     3000,
+}
+
+server := confmcp.NewServer(config)
+
+// 一键启动 HTTP 服务器！自动处理所有路由和端点
+err := server.Serve([]*confmcp.Tool{
+    {
+        Name:        "ping",
+        Description: "健康检查",
+        InputSchema: map[string]interface{}{
+            "type": "object",
+        },
+        Handler: func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+            return map[string]interface{}{
+                "status": "ok",
+                "time":   time.Now().Format(time.RFC3339),
+            }, nil
+        },
+    },
+    {
+        Name:        "echo",
+        Description: "回显消息",
+        InputSchema: map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "message": map[string]interface{}{
+                    "type": "string",
+                },
+            },
+            "required": []string{"message"},
+        },
+        Handler: func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+            return args["message"], nil
+        },
+    },
+})
+
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+`Serve` 方法自动为你：
+- ✅ 注册所有工具
+- ✅ 创建 HTTP 服务器
+- ✅ 配置所有端点 (`/mcp`, `/health`, `/tools`, `/resources`, `/prompts`)
+- ✅ 启用 CORS 支持
+- ✅ 处理错误和日志
+
+**可用端点：**
+- `http://localhost:3000/mcp` - MCP JSON-RPC 接口
+- `http://localhost:3000/health` - 健康检查
+- `http://localhost:3000/tools` - 工具列表
+
+**测试：**
+```bash
+# 健康检查
+curl http://localhost:3000/health
+
+# 调用工具
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{}}}'
+
+# 获取工具列表
+curl http://localhost:3000/tools
+```
+
+详见 [SERVE.md](SERVE.md)
+
 ### 使用 HTTP 协议
 
 创建 HTTP 服务器（端口 3000）：

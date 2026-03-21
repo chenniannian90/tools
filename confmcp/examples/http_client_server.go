@@ -22,7 +22,6 @@ func main() {
 		Protocol: "http",
 		Port:     3001,
 	}
-
 	// 创建自定义 HTTP 客户端
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
@@ -287,10 +286,10 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		status := config.LivenessCheck()
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "healthy",
-			"server":  config.Name,
-			"time":    time.Now().Format(time.RFC3339),
-			"checks":  status,
+			"status": "healthy",
+			"server": config.Name,
+			"time":   time.Now().Format(time.RFC3339),
+			"checks": status,
 		})
 	})
 
