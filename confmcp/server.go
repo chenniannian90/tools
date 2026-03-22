@@ -194,37 +194,14 @@ func (s *Server) Serve(tools []*Tool) error {
 	return nil
 }
 
-// mcpHandler creates the MCP HTTP handler
+// mcpHandler creates the MCP HTTP handler with API Key middleware
 func (s *Server) mcpHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	// 创建内部的 MCP handler
+	mcpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
 
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// X-API-Key 认证
-		apiKey := r.Header.Get("X-API-Key")
-		if apiKey == "" {
-			logrus.Warnf("Missing X-API-Key header from %s", r.RemoteAddr)
-			s.sendJSONRPCError(w, -32001, "Unauthorized: Missing X-API-Key header", nil)
-			return
-		}
-
-		// 验证 API Key
-		validAPIKeys := s.getValidAPIKeys()
-		if !s.isValidAPIKey(apiKey, validAPIKeys) {
-			logrus.Warnf("Invalid X-API-Key from %s", r.RemoteAddr)
-			s.sendJSONRPCError(w, -32002, "Unauthorized: Invalid API Key", nil)
 			return
 		}
 
@@ -237,7 +214,15 @@ func (s *Server) mcpHandler() http.HandlerFunc {
 
 		response := s.HandleRequest(r.Context(), request)
 		json.NewEncoder(w).Encode(response)
+	})
+
+	// 应用 API Key 认证 middleware
+	config := APIKeyConfig{
+		APIKeys: s.APIKeys,
 	}
+
+	// 使用 middleware 包装 handler
+	return APIKeyAuthFunc(config.APIKeys, mcpHandler.ServeHTTP)
 }
 
 // sendJSONRPCError sends a JSON-RPC error response
