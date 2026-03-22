@@ -16,9 +16,10 @@ import (
 // Server represents an MCP server instance (tools only)
 type Server struct {
 	// 公开配置字段（类似 http.Server）
-	Name     string // 服务器名称
-	Protocol string // 协议类型: "stdio", "http", "sse"
-	Port     int    // 端口（HTTP/SSE 时使用）
+	Name     string   // 服务器名称
+	Protocol string   // 协议类型: "stdio", "http", "sse"
+	Port     int      // 端口（HTTP/SSE 时使用）
+	APIKeys  []string // 有效的 API Key 列表
 
 	// 内部字段
 	tools   *ToolRegistry
@@ -199,7 +200,7 @@ func (s *Server) mcpHandler() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -208,6 +209,22 @@ func (s *Server) mcpHandler() http.HandlerFunc {
 
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// X-API-Key 认证
+		apiKey := r.Header.Get("X-API-Key")
+		if apiKey == "" {
+			logrus.Warnf("Missing X-API-Key header from %s", r.RemoteAddr)
+			s.sendJSONRPCError(w, -32001, "Unauthorized: Missing X-API-Key header", nil)
+			return
+		}
+
+		// 验证 API Key
+		validAPIKeys := s.getValidAPIKeys()
+		if !s.isValidAPIKey(apiKey, validAPIKeys) {
+			logrus.Warnf("Invalid X-API-Key from %s", r.RemoteAddr)
+			s.sendJSONRPCError(w, -32002, "Unauthorized: Invalid API Key", nil)
 			return
 		}
 
@@ -567,6 +584,61 @@ func (s *Server) RegisterTool(tool *Tool) error {
 // GetTools returns the tool registry
 func (s *Server) GetTools() *ToolRegistry {
 	return s.tools
+}
+
+// SetAPIKeys 设置有效的 API Key 列表
+func (s *Server) SetAPIKeys(keys []string) {
+	s.APIKeys = keys
+	logrus.Infof("Updated %d API keys", len(keys))
+}
+
+// AddAPIKey 添加一个 API Key
+func (s *Server) AddAPIKey(key string) {
+	s.APIKeys = append(s.APIKeys, key)
+	logrus.Infof("Added API key: %s...", key[:min(8, len(key))])
+}
+
+// getValidAPIKeys 获取有效的 API Key 列表
+func (s *Server) getValidAPIKeys() []string {
+	s.Init()
+
+	// 如果已配置 API Keys，直接返回
+	if len(s.APIKeys) > 0 {
+		return s.APIKeys
+	}
+
+	// 尝试从环境变量读取 API Keys
+	if apiKey := os.Getenv("MCP_API_KEY"); apiKey != "" {
+		return []string{apiKey}
+	}
+
+	// 如果没有配置 API Keys，返回空切片（禁用认证）
+	return []string{}
+}
+
+// isValidAPIKey 验证提供的 API Key 是否有效
+func (s *Server) isValidAPIKey(apiKey string, validAPIKeys []string) bool {
+	// 如果没有配置任何 API Keys，禁用认证
+	if len(validAPIKeys) == 0 {
+		return true
+	}
+
+	// 验证 API Key 是否在有效列表中
+	for _, validKey := range validAPIKeys {
+		if apiKey == validKey {
+			return true
+		}
+	}
+
+	return false
+}
+
+// min 返回两个整数中的较小值
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // errorResponse creates an error response
