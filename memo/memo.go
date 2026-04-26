@@ -4,37 +4,36 @@ import (
 	"sync"
 )
 
-// Memo is a concurrent-safe, singleflight cache with optional Loader.
+// Memo 是并发安全的 singleflight 缓存，支持可选的 Loader。
 //
-// Two-level locking strategy:
-//   - Memo.Mutex (global lock): protects the cache map (insert/delete).
-//     Held only briefly during map lookups, never during Loader execution.
-//   - item.Mutex (per-key lock): protects value/err/expireAt/loaded/loading.
-//     The first goroutine to load a key holds this lock during Loader execution;
-//     subsequent goroutines for the same key block here until the load completes.
+// 两级锁策略:
+//   - Memo.Mutex（全局锁）: 保护 cache map（增删）。仅在 map 操作时短暂持有，Loader 执行期间不持有。
+//   - item.Mutex（per-key 锁）: 保护单个 key 的 value/err/expireAt/loaded/loading。
+//     第一个加载该 key 的 goroutine 在 Loader 执行期间持有此锁；
+//     后续相同 key 的 goroutine 在此阻塞直到加载完成。
 //
-// Lock ordering: global lock (m.Mutex) → item lock (item.Mutex).
-// Never acquire global lock while holding an item lock.
+// 锁顺序: 全局锁 (m.Mutex) → item 锁 (item.Mutex)。
+// 绝不会在持有 item 锁时获取全局锁（除 CacheError=false 清理时，此时 item 锁已持有且不会等待全局锁）。
 type Memo struct {
 	sync.Mutex
 	Options
 	cache map[Key]*item
 }
 
-// item represents a cached entry for a single key.
+// item 表示单个 key 的缓存条目。
 //
-// State transitions (all under item.Mutex):
+// 状态流转（均在 item.Mutex 保护下）:
 //
-//	(created) → loading=true → loaded=true, loading=false  (success or CacheError=true)
-//	              or
-//	           → loaded=false, loading=false, item deleted  (error with CacheError=false)
+//	(创建) → loading=true → loaded=true, loading=false    （成功 或 CacheError=true）
+//	            或
+//	         → loaded=false, loading=false, item 被删除    （出错 且 CacheError=false）
 type item struct {
 	sync.Mutex
 	value    Value
 	err      error
 	expireAt int64
-	loaded   bool // true after setCache completes
-	loading  bool // true while Loader is in progress (singleflight barrier)
+	loaded   bool // setCache 完成后为 true
+	loading  bool // Loader 执行期间为 true（singleflight 屏障）
 }
 
 func NewMemo(opts ...Option) *Memo {
@@ -45,7 +44,7 @@ func NewMemo(opts ...Option) *Memo {
 	return m
 }
 
-// setCache writes the Loader result into the item and marks it as loaded.
+// setCache 将 Loader 结果写入 item 并标记为已加载。
 func (i *item) setCache(o Options, value Value, err error) {
 	i.value, i.err = value, err
 	if o.Expiration == NoExpire {
@@ -57,7 +56,7 @@ func (i *item) setCache(o Options, value Value, err error) {
 	i.loading = false
 }
 
-// isValid returns true if the item has been loaded and has not expired.
+// isValid 判断 item 是否已加载且未过期。
 func (i *item) isValid(now int64) bool {
 	return i.loaded && (i.expireAt == 0 || i.expireAt > now)
 }
@@ -69,7 +68,7 @@ func (m *Memo) Get(key Key, opts ...Option) (value Value, err error) {
 	i := m.cache[key]
 
 	if o.Loader == nil {
-		// --- No Loader: pure cache read ---
+		// --- 无 Loader: 纯缓存读取 ---
 		if i == nil {
 			m.Unlock()
 		} else {
@@ -83,43 +82,39 @@ func (m *Memo) Get(key Key, opts ...Option) (value Value, err error) {
 		return nil, ErrNotFound
 	}
 
-	// --- Loader is provided ---
-	// Ensure item exists in the cache map. Create if missing.
+	// --- 有 Loader ---
+	// 确保 item 存在于 cache map 中，不存在则创建
 	if i == nil {
 		i = &item{}
 		m.cache[key] = i
 	}
-	// At this point i is in the cache. Lock the item before releasing global lock
-	// so that we can safely read i.loading under item lock.
+	// 此时 item 已在 cache 中。先锁住 item 再释放全局锁，
+	// 保证 i.loading 的读取在 item 锁保护下进行。
 	m.Unlock()
 	i.Lock()
 	defer i.Unlock()
 
 	if i.loading {
-		// [singleflight follower] Another goroutine is currently loading this key.
-		// We just acquired i.Mutex, which means the leader has finished.
-		// The leader's setCache has already updated i.loaded/i.value/i.err.
+		// [singleflight 跟随者] 另一个 goroutine 正在加载该 key。
+		// 能拿到 item 锁说明 leader 已经完成，setCache 已更新了值。
 		if i.isValid(m.Clock.Now().UnixNano()) {
 			return i.value, i.err
 		}
-		// Leader finished but cache is invalid (expired or error-not-cached).
-		// Fall through to become the new loader.
+		// leader 完成但缓存无效（过期 或 错误未缓存），继续往下成为新的 loader
 	} else if i.isValid(m.Clock.Now().UnixNano()) {
-		// [cache hit] Item is loaded and not expired — return directly.
+		// [缓存命中] 已加载且未过期，直接返回
 		return i.value, i.err
 	}
-	// Item is not valid (expired, error-not-cached, or just created with loaded=false).
-	// Become the singleflight leader: set loading=true so any new goroutines
-	// that arrive will see loading=true and wait for us.
+	// 缓存无效（过期 / 错误未缓存 / 刚创建 loaded=false）。
+	// 成为 singleflight leader: 设置 loading=true，后续新到达的 goroutine 会看到并等待。
 	i.loading = true
 
 	value, err = o.Loader(key)
 	if err != nil && !o.CacheError {
-		// CacheError=false: error is not cached.
-		// Remove item from cache so next Get retries Loader.
-		// Lock ordering: we hold i.Mutex, then acquire m.Mutex. This is safe
-		// because the reverse order never occurs (m.Mutex is never held while
-		// waiting on i.Mutex since we released m.Mutex above).
+		// CacheError=false: 错误不缓存。
+		// 重置状态并从 cache 删除，下次 Get 会重新调 Loader。
+		// 锁顺序安全: 已持有 i.Mutex，再获取 m.Mutex。
+		// 不会死锁因为不存在反向顺序（m.Mutex 不会在等待 i.Mutex 时持有）。
 		i.loading = false
 		i.loaded = false
 		m.Lock()

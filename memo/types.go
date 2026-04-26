@@ -21,23 +21,23 @@ type (
 	Expiration = time.Duration
 )
 
-// Options configures Memo behavior. Set via WithXxx() Option functions.
+// Options 配置 Memo 的行为，通过 WithXxx() Option 函数设置。
 type Options struct {
-	Clock      Clock      // time source; defaults to real system clock
-	Loader     Loader     // function to load a missing/expired value
-	Expiration Expiration // TTL for cached entries; NoExpire (0) means never expire
-	// CacheError controls whether Loader errors are cached.
-	//   - true (default): errors are cached with the same Expiration as successes.
-	//     Concurrent goroutines sharing a singleflight will all receive the same error.
-	//   - false: on error, the cache entry is removed so the next Get retries Loader.
-	//     Concurrent goroutines already waiting in singleflight still receive the error,
-	//     but a subsequent serial Get will trigger a fresh Loader call.
+	Clock      Clock      // 时钟源，默认为系统真实时钟
+	Loader     Loader     // 加载函数，用于加载缺失或过期的值
+	Expiration Expiration // 缓存 TTL；NoExpire (0) 表示永不过期
+	// CacheError 控制 Loader 错误是否被缓存:
+	//   - true（默认）: 错误和成功一样缓存，使用相同的 Expiration。
+	//     并发 singleflight 中的 goroutine 都会收到同一个错误。
+	//   - false: 出错时删除缓存条目，下次 Get 会重新调 Loader。
+	//     已在 singleflight 中等待的 goroutine 仍会收到错误，
+	//     但之后的串行 Get 会触发新的 Loader 调用。
 	CacheError bool
 }
 
 type Option func(*Options)
 
-// newOptions creates Options with defaults: real clock, CacheError=true.
+// newOptions 创建默认 Options: 真实时钟，CacheError=true。
 func newOptions(opts ...Option) Options {
 	o := Options{
 		Clock:      clock.NewRealClock(),
@@ -49,7 +49,7 @@ func newOptions(opts ...Option) Options {
 	return o
 }
 
-// newGetOptions inherits all fields from base Options, then applies per-call overrides.
+// newGetOptions 继承 base Options 的所有字段，再应用单次调用的覆盖项。
 func (base *Options) newGetOptions(opts ...Option) Options {
 	o := Options{
 		Clock:      base.Clock,
@@ -63,7 +63,7 @@ func (base *Options) newGetOptions(opts ...Option) Options {
 	return o
 }
 
-// newSetOptions inherits only Expiration from base Options (Loader/Clock not relevant for Set).
+// newSetOptions 仅继承 Expiration（Set 不需要 Loader/Clock）。
 func (base *Options) newSetOptions(opts ...Option) Options {
 	o := Options{
 		Expiration: base.Expiration,
@@ -92,8 +92,7 @@ func WithExpiration(expiration Expiration) Option {
 	}
 }
 
-// WithCacheError sets whether Loader errors should be cached.
-// Default is true. Pass false to make Get retry Loader on every call after an error.
+// WithCacheError 设置 Loader 错误是否缓存。默认 true。传 false 使 Get 在出错后每次重试 Loader。
 func WithCacheError(cache bool) Option {
 	return func(o *Options) {
 		o.CacheError = cache
